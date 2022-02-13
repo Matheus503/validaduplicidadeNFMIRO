@@ -1,0 +1,182 @@
+
+  IF save_xblnr IS INITIAL             "external NF-number
+  AND nfheader-doctyp = '1'.           "incoming
+* Not in case NF-e incoming entrada
+    IF ( NOT nfheader-nfe IS INITIAL ) AND
+       ( NOT nfheader-entrad IS INITIAL ) AND
+       ( NOT nfheader-form IS INITIAL ).
+    ELSE.
+      MESSAGE e354 WITH 'NOT GRGI'.
+    ENDIF.
+  ENDIF.
+  IF rbkpv-bktxt IS INITIAL.
+    IF j_1baa-doctyp CA '2346'. "complementar,correction,conhecim.
+      MESSAGE e357.
+    ENDIF.
+  ENDIF.
+*-- set vendor --------------------------------------------------------*
+  zlif1 = rbkpv-lifnr.
+*-- split save-xblnr to nf-number series subseries for reference-------*
+  CLEAR: znum, zser, zsub.
+  CLEAR: znum_utilities.
+  IF NOT save_xblnr IS INITIAL.
+
+    CALL FUNCTION 'J_1B_NF_NUMBER_SEPARATE'
+    EXPORTING
+      ref_number = save_xblnr
+      i_nfeflag  = j_1baa-nfe
+      i_form     = j_1baa-form
+      i_nfmodel  = j_1baa-model
+    IMPORTING
+      nf_number  = znum
+      series     = zser
+      subseries  = zsub
+      nf_number9 = znum9
+      nf_number_utilities = znum_utilities
+    EXCEPTIONS
+      too_many_dashes = 2
+      number_error    = 3
+      OTHERS     = 3.
+  CASE sy-subrc.
+    WHEN 1. MESSAGE e235 WITH save_xblnr.
+    WHEN 2. MESSAGE e237 WITH save_xblnr.
+    WHEN 3. MESSAGE e236 WITH save_xblnr.
+  ENDCASE.
+
+  CLEAR: lv_tamanho.
+lv_tamanho = strlen( zser ).
+
+lv_zeros = 3 - lv_tamanho.
+
+WHILE lv_zeros <> 0.
+
+  APPEND INITIAL LINE TO r_series ASSIGNING FIELD-SYMBOL(<fs_series>).
+
+  <fs_series>-sign   = 'I'.
+  <fs_series>-option = 'EQ'.
+
+  CASE lv_zeros.
+    WHEN 2.
+      <fs_series>-low = '00' && zser.
+    WHEN 1.
+      <fs_series>-low = '0' && zser.
+  ENDCASE.
+
+  lv_zeros = lv_zeros - 1.
+ENDWHILE.
+
+  APPEND INITIAL LINE TO r_series ASSIGNING <fs_series>.
+
+  <fs_series>-sign   = 'I'.
+  <fs_series>-option = 'EQ'.
+  <fs_series>-low    = zser.
+
+   APPEND INITIAL LINE TO r_series ASSIGNING <fs_series>.
+
+  <fs_series>-sign   = 'I'.
+  <fs_series>-option = 'EQ'.
+
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING
+      INPUT         = zser
+   IMPORTING
+     OUTPUT        = <fs_series>-low.
+
+  IF j_1baa-nfe IS INITIAL.
+
+    IF znum_utilities IS NOT INITIAL.
+
+      SELECT SINGLE * FROM j_1bnfdoc
+          WHERE nfnum_utilities = znum_utilities
+            AND parid = zlif1
+            AND series in r_series
+            AND subser = zsub
+            AND cancel = space
+            AND doctyp <> '5'
+            AND model = j_1baa-model.
+
+      IF    sy-subrc IS INITIAL
+       AND rbkpv-ivtyp <> '5'.
+        MESSAGE e223 WITH znum_utilities zser zsub zlif1.
+      ENDIF.
+
+    ELSE.
+
+      SELECT        * FROM  j_1bnfdoc
+           WHERE  nfnum       = znum
+           AND    parid       = zlif1
+           AND    series      in r_series
+           AND    subser      = zsub
+           AND    cancel      = space
+           AND    doctyp      <> '5'
+           AND    model       = j_1baa-model.
+      EXIT.
+    ENDSELECT.
+
+      IF sy-subrc IS INITIAL
+      AND rbkpv-ivtyp <> '5'.
+        MESSAGE e223 WITH znum zser zsub zlif1.
+      ENDIF.
+
+    ENDIF.
+
+  ELSE.
+
+    CLEAR: lv_tamanho.
+lv_tamanho = strlen( znum9 ).
+
+lv_zeros = 9 - lv_tamanho.
+
+WHILE lv_zeros <> 0.
+
+  APPEND INITIAL LINE TO r_nfenum ASSIGNING FIELD-SYMBOL(<fs_nfenum>).
+
+  <fs_nfenum>-sign   = 'I'.
+  <fs_nfenum>-option = 'EQ'.
+
+  CASE lv_zeros.
+    WHEN 8.
+      <fs_nfenum>-low = '00000000' && znum9.
+    WHEN 7.
+      <fs_nfenum>-low = '0000000' && znum9.
+    WHEN 6.
+      <fs_nfenum>-low = '000000' && znum9.
+    WHEN 5.
+      <fs_nfenum>-low = '00000' && znum9.
+    WHEN 4.
+      <fs_nfenum>-low = '0000' && znum9.
+    WHEN 3.
+      <fs_nfenum>-low = '000' && znum9.
+    WHEN 2.
+      <fs_nfenum>-low = '00' && znum9.
+    WHEN 1.
+      <fs_nfenum>-low = '0' && znum9.
+  ENDCASE.
+
+  lv_zeros = lv_zeros - 1.
+ENDWHILE.
+
+  APPEND INITIAL LINE TO r_nfenum ASSIGNING <fs_nfenum>.
+
+  <fs_nfenum>-sign   = 'I'.
+  <fs_nfenum>-option = 'EQ'.
+  <fs_nfenum>-low    = znum9.
+
+    SELECT        * FROM  j_1bnfdoc
+           WHERE  nfenum      IN r_nfenum
+           AND    parid       = zlif1
+           AND    series      in r_series
+           AND    model       = nfheader-model
+           AND    cancel      = space
+           AND    doctyp      <> '5'.
+      EXIT.
+    ENDSELECT.
+
+    IF sy-subrc IS INITIAL
+    AND rbkpv-ivtyp <> '5'.
+      MESSAGE e223 WITH znum9 zser zsub zlif1.
+    ENDIF.
+
+  ENDIF.
+*
+  ENDIF.
